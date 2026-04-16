@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './src/routes/auth.routes';
+import merchantRoutes from './src/routes/merchant.routes';
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -10,6 +11,7 @@ app.use(express.json());
 
 // Load Routers
 app.use('/api/auth', authRoutes);
+app.use('/api/merchants', merchantRoutes);
 
 // API Health Check
 app.get('/health', (req, res) => {
