@@ -1,0 +1,327 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Users and Generic Role Management
+model User {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  email     String?  @unique
+  password  String?
+  role      UserRole @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customerProfile CustomerProfile?
+  merchant        Merchant?
+  rider           Rider?
+  ratingsGiven    Rating[]         @relation("RatingAuthor")
+  supportTickets  SupportTicket[]
+}
+
+enum UserRole {
+  CUSTOMER
+  MERCHANT_ADMIN
+  RIDER
+  ADMIN
+}
+
+// Customer Entities
+model CustomerProfile {
+  id        String  @id @default(uuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id])
+  firstName String?
+  lastName  String?
+
+  addresses CustomerAddress[]
+  orders    Order[]
+}
+
+model CustomerAddress {
+  id                String          @id @default(uuid())
+  customerProfileId String
+  customerProfile   CustomerProfile @relation(fields: [customerProfileId], references: [id])
+  label             String? // e.g. Home, Office
+  addressLine       String
+  latitude          Float?
+  longitude         Float?
+  isDefault         Boolean         @default(false)
+}
+
+// Merchant Entities
+model Merchant {
+  id          String         @id @default(uuid())
+  userId      String         @unique
+  user        User           @relation(fields: [userId], references: [id])
+  name        String
+  description String?
+  status      MerchantStatus @default(PENDING)
+
+  locations    MerchantLocation[]
+  catalogItems MerchantCatalogItem[]
+  orders       Order[]
+  settlements  MerchantSettlement[]
+  ratings      Rating[]              @relation("TargetMerchant")
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+}
+
+enum MerchantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+model MerchantLocation {
+  id             String   @id @default(uuid())
+  merchantId     String
+  merchant       Merchant @relation(fields: [merchantId], references: [id])
+  address        String
+  latitude       Float
+  longitude      Float
+  operatingHours Json?
+}
+
+model MerchantCatalogItem {
+  id          String   @id @default(uuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  name        String
+  description String?
+  price       Float
+  isAvailable Boolean  @default(true)
+
+  orderItems OrderItem[]
+}
+
+// Rider Entities
+model Rider {
+  id         String      @id @default(uuid())
+  userId     String      @unique
+  user       User        @relation(fields: [userId], references: [id])
+  status     RiderStatus @default(PENDING_APPROVAL)
+  isOnline   Boolean     @default(false)
+  currentLat Float?
+  currentLng Float?
+
+  rewardTierId String?
+  rewardTier   RewardTier? @relation(fields: [rewardTierId], references: [id])
+
+  documents         RiderDocument[]
+  assignments       DeliveryAssignment[]
+  wallet            RiderWallet?
+  ratings           Rating[]             @relation("TargetRider")
+  completedMissions RiderMissionMap[]
+}
+
+enum RiderStatus {
+  PENDING_APPROVAL
+  APPROVED
+  SUSPENDED
+}
+
+model RiderDocument {
+  id         String  @id @default(uuid())
+  riderId    String
+  rider      Rider   @relation(fields: [riderId], references: [id])
+  type       String // ID, License
+  fileUrl    String
+  isVerified Boolean @default(false)
+}
+
+model RewardTier {
+  id       String  @id @default(uuid())
+  name     String // Starter, Bronze, etc.
+  criteria Json
+  perks    Json
+  riders   Rider[]
+}
+
+model RiderMission {
+  id          String            @id @default(uuid())
+  title       String
+  targetType  String // Volume, Streak
+  targetValue Int
+  reward      Float
+  riders      RiderMissionMap[]
+}
+
+model RiderMissionMap {
+  id          String       @id @default(uuid())
+  riderId     String
+  rider       Rider        @relation(fields: [riderId], references: [id])
+  missionId   String
+  mission     RiderMission @relation(fields: [missionId], references: [id])
+  progress    Int          @default(0)
+  isCompleted Boolean      @default(false)
+}
+
+// Order Entities
+model Order {
+  id                String          @id @default(uuid())
+  customerProfileId String
+  customerProfile   CustomerProfile @relation(fields: [customerProfileId], references: [id])
+  merchantId        String
+  merchant          Merchant        @relation(fields: [merchantId], references: [id])
+
+  status      OrderStatus @default(CREATED)
+  totalAmount Float
+  deliveryFee Float
+  serviceFee  Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  assignment    DeliveryAssignment?
+  payment       Payment?
+  rating        Rating?              @relation("OrderRating")
+}
+
+enum OrderStatus {
+  CREATED
+  AWAITING_MERCHANT
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  RIDER_ASSIGNED
+  EN_ROUTE_TO_MERCHANT
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+  FAILED
+}
+
+model OrderItem {
+  id                    String              @id @default(uuid())
+  orderId               String
+  order                 Order               @relation(fields: [orderId], references: [id])
+  merchantCatalogItemId String
+  catalogItem           MerchantCatalogItem @relation(fields: [merchantCatalogItemId], references: [id])
+  quantity              Int
+  priceAtOrder          Float
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  timestamp DateTime    @default(now())
+  note      String?
+}
+
+// Delivery
+model DeliveryAssignment {
+  id         String           @id @default(uuid())
+  orderId    String           @unique
+  order      Order            @relation(fields: [orderId], references: [id])
+  riderId    String
+  rider      Rider            @relation(fields: [riderId], references: [id])
+  status     AssignmentStatus @default(ASSIGNED)
+  assignedAt DateTime         @default(now())
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+// Payments and Wallets
+model Payment {
+  id        String        @id @default(uuid())
+  orderId   String        @unique
+  order     Order         @relation(fields: [orderId], references: [id])
+  amount    Float
+  status    PaymentStatus @default(PENDING)
+  method    String? // Card, Cash
+  createdAt DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model RiderWallet {
+  id      String @id @default(uuid())
+  riderId String @unique
+  rider   Rider  @relation(fields: [riderId], references: [id])
+  balance Float  @default(0)
+
+  transactions RiderTransaction[]
+}
+
+model RiderTransaction {
+  id        String      @id @default(uuid())
+  walletId  String
+  wallet    RiderWallet @relation(fields: [walletId], references: [id])
+  amount    Float
+  type      String // EARNING, PAYOUT
+  createdAt DateTime    @default(now())
+}
+
+model MerchantSettlement {
+  id         String           @id @default(uuid())
+  merchantId String
+  merchant   Merchant         @relation(fields: [merchantId], references: [id])
+  amount     Float
+  status     SettlementStatus @default(PENDING)
+  createdAt  DateTime         @default(now())
+  paidAt     DateTime?
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  PAID
+}
+
+// Ratings & Support
+model Rating {
+  id      String @id @default(uuid())
+  orderId String @unique
+  order   Order  @relation("OrderRating", fields: [orderId], references: [id])
+
+  authorId String
+  author   User   @relation("RatingAuthor", fields: [authorId], references: [id])
+
+  targetMerchantId String?
+  merchant         Merchant? @relation("TargetMerchant", fields: [targetMerchantId], references: [id])
+
+  targetRiderId String?
+  rider         Rider?  @relation("TargetRider", fields: [targetRiderId], references: [id])
+
+  score   Int // 1-5
+  comment String?
+}
+
+model SupportTicket {
+  id          String       @id @default(uuid())
+  authorId    String
+  author      User         @relation(fields: [authorId], references: [id])
+  issueType   String
+  description String
+  status      TicketStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  resolvedAt  DateTime?
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
